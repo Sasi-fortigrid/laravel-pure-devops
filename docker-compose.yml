@@ -1,0 +1,73 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/php.dockerfile
+    image: l13-app
+    container_name: devops-app-container
+    restart: unless-stopped
+    tty: true
+    depends_on:
+      db:
+        condition: service_healthy # 👈 Wait until DB is actually ready
+    volumes:
+      - ./:/var/www
+    networks:
+      - devops-network
+
+  web:
+    image: nginx:alpine
+    container_name: devops-web-container
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      - ./:/var/www
+      - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf
+    networks:
+      - devops-network
+
+  db:
+    image: mysql:8.0
+    container_name: devops-db-container
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: laravel_db
+      MYSQL_ROOT_PASSWORD: root_password
+      MYSQL_USER: laravel_user
+      MYSQL_PASSWORD: user_password
+      MYSQL_ALLOW_EMPTY_PASSWORD: "no"
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - devops-network
+    healthcheck: # 👈 FIXED: Tells Docker when MySQL is fully booted up
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot_password"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  phpmyadmin:
+    image: phpmyadmin:latest
+    container_name: laravel_phpmyadmin
+    ports:
+      - "8888:80"
+    environment:
+      PMA_HOST: db
+      PMA_PORT: 3306 # 👈 FIXED: Points to internal container port
+      PMA_USER: laravel_user
+      PMA_PASSWORD: user_password
+    depends_on:
+      db:
+        condition: service_healthy # 👈 FIXED: Prevents premature connection refusal
+    networks:
+      - devops-network
+
+volumes:
+  mysql_data:
+
+networks:
+  devops-network:
+    driver: bridge
